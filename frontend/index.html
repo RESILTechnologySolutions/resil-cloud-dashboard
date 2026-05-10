@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RESIL Cloud Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #fff; }
+        header {
+            background: #1a1d27;
+            padding: 20px 40px;
+            border-bottom: 1px solid #2a2d3a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 { font-size: 1.4rem; color: #4f8ef7; }
+        header span { font-size: 0.85rem; color: #888; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            padding: 30px 40px;
+        }
+        .card {
+            background: #1a1d27;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid #2a2d3a;
+        }
+        .card h3 { font-size: 0.85rem; color: #888; margin-bottom: 10px; }
+        .card p { font-size: 2rem; font-weight: bold; color: #4f8ef7; }
+        .card small { font-size: 0.75rem; color: #555; }
+        .charts { padding: 0 40px 40px; display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .chart-card {
+            background: #1a1d27;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid #2a2d3a;
+        }
+        .chart-card h3 { font-size: 0.95rem; color: #ccc; margin-bottom: 20px; }
+        .status { 
+            text-align: center; 
+            padding: 60px; 
+            color: #555; 
+            font-size: 0.9rem;
+        }
+        .badge {
+            display: inline-block;
+            background: #1e3a5f;
+            color: #4f8ef7;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>RESIL Cloud Dashboard <span class="badge">AWS Cost Explorer</span></h1>
+        <span id="lastUpdated">Loading...</span>
+    </header>
+
+    <div class="stats">
+        <div class="card">
+            <h3>TOTAL COST (30 DAYS)</h3>
+            <p id="totalCost">$0.00</p>
+            <small>AWS Services Combined</small>
+        </div>
+        <div class="card">
+            <h3>HIGHEST SPEND SERVICE</h3>
+            <p id="topService" style="font-size:1.2rem">--</p>
+            <small>Last 30 days</small>
+        </div>
+        <div class="card">
+            <h3>ACTIVE SERVICES</h3>
+            <p id="activeServices">0</p>
+            <small>With recorded spend</small>
+        </div>
+    </div>
+
+    <div class="charts">
+        <div class="chart-card">
+            <h3>Daily Cost Trend</h3>
+            <canvas id="lineChart"></canvas>
+            <div class="status" id="lineStatus"></div>
+        </div>
+        <div class="chart-card">
+            <h3>Cost by Service</h3>
+            <canvas id="pieChart"></canvas>
+            <div class="status" id="pieStatus"></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadData() {
+            document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleString();
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/costs');
+                const data = await res.json();
+
+                // Process data
+                const dailyTotals = {};
+                const serviceTotals = {};
+
+                data.forEach(day => {
+                    const date = day.TimePeriod.Start;
+                    let dayTotal = 0;
+                    day.Groups.forEach(group => {
+                        const service = group.Keys[0];
+                        const amount = parseFloat(group.Metrics.UnblendedCost.Amount);
+                        dayTotal += amount;
+                        serviceTotals[service] = (serviceTotals[service] || 0) + amount;
+                    });
+                    dailyTotals[date] = dayTotal;
+                });
+
+                // Stats
+                const total = Object.values(serviceTotals).reduce((a, b) => a + b, 0);
+                const topService = Object.entries(serviceTotals).sort((a, b) => b[1] - a[1])[0];
+                const activeServices = Object.values(serviceTotals).filter(v => v > 0).length;
+
+                document.getElementById('totalCost').textContent = '$' + total.toFixed(2);
+                document.getElementById('topService').textContent = topService ? topService[0].replace('Amazon ', '').replace('AWS ', '') : '--';
+                document.getElementById('activeServices').textContent = activeServices;
+
+                // Line chart
+                new Chart(document.getElementById('lineChart'), {
+                    type: 'line',
+                    data: {
+                        labels: Object.keys(dailyTotals),
+                        datasets: [{
+                            label: 'Daily Cost ($)',
+                            data: Object.values(dailyTotals),
+                            borderColor: '#4f8ef7',
+                            backgroundColor: 'rgba(79,142,247,0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: { plugins: { legend: { labels: { color: '#ccc' } } }, scales: { x: { ticks: { color: '#666' } }, y: { ticks: { color: '#666' } } } }
+                });
+
+                // Pie chart
+                const topServices = Object.entries(serviceTotals).sort((a, b) => b[1] - a[1]).slice(0, 6);
+                new Chart(document.getElementById('pieChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: topServices.map(s => s[0].replace('Amazon ', '').replace('AWS ', '')),
+                        datasets: [{ data: topServices.map(s => s[1].toFixed(2)), backgroundColor: ['#4f8ef7','#7c3aed','#06b6d4','#10b981','#f59e0b','#ef4444'] }]
+                    },
+                    options: { plugins: { legend: { labels: { color: '#ccc' } } } }
+                });
+
+            } catch(e) {
+                document.getElementById('lineStatus').textContent = 'Waiting for API connection...';
+                document.getElementById('pieStatus').textContent = 'Waiting for API connection...';
+            }
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
