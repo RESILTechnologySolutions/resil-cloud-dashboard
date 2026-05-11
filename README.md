@@ -19,6 +19,9 @@ A real-time cloud cost and resource monitoring dashboard built with Python and A
 - HTML/CSS/JavaScript
 - Chart.js
 
+## Dashboard Preview
+![RESIL Cloud Dashboard](screenshot.png)
+
 ## Setup
 Instructions coming soon.
 
